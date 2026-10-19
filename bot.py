@@ -67,6 +67,7 @@ yes_no_keyboard = ReplyKeyboardMarkup(
     resize_keyboard=True,
 )
 
+
 goals_keyboard = ReplyKeyboardMarkup(
     keyboard=[
         [KeyboardButton(text="📈 Поднять рейтинг")],
@@ -77,7 +78,9 @@ goals_keyboard = ReplyKeyboardMarkup(
         [KeyboardButton(text="❌ Отмена")],
     ],
     resize_keyboard=True,
+    input_field_placeholder="Выбери цели и нажми «Готово»",
 )
+
 
 behavior_keyboard = ReplyKeyboardMarkup(
     keyboard=[
@@ -91,7 +94,20 @@ behavior_keyboard = ReplyKeyboardMarkup(
     ],
     resize_keyboard=True,
 )
-
+country_keyboard = ReplyKeyboardMarkup(
+    keyboard=[
+        [KeyboardButton(text="🇷🇺 Россия")],
+        [KeyboardButton(text="🇧🇾 Беларусь")],
+        [KeyboardButton(text="🇰🇿 Казахстан")],
+        [KeyboardButton(text="🇺🇦 Украина")],
+        [KeyboardButton(text="🇱🇻 Латвия")],
+        [KeyboardButton(text="🌍 Другая страна")],
+        [KeyboardButton(text="⏭ Пропустить")],
+        [KeyboardButton(text="❌ Отмена")],
+    ],
+    resize_keyboard=True,
+    input_field_placeholder="Выбери страну или пропусти",
+)
 
 def connect_db():
     return sqlite3.connect(DB_PATH)
@@ -315,6 +331,7 @@ async def enter_faceit(message: Message, state: FSMContext):
         await ask_goals(message, state)
 
 
+
 @dp.message(ProfileForm.goals)
 async def enter_goals(message: Message, state: FSMContext):
     text = (message.text or "").strip()
@@ -324,18 +341,23 @@ async def enter_goals(message: Message, state: FSMContext):
         "🎉 Играть ради удовольствия": "Играть ради удовольствия",
         "🏆 Собрать команду для турниров": "Команда для турниров",
     }
-    data = await state.get_data()
-    goals = data.get("goals", [])
 
     if text == "❌ Отмена":
         await state.clear()
         await message.answer("Заполнение отменено.", reply_markup=keyboard)
         return
 
+    data = await state.get_data()
+    goals = data.get("goals", [])
+
     if text == "✅ Готово":
         if not goals:
-            await message.answer("Выбери хотя бы одну цель.", reply_markup=goals_keyboard)
+            await message.answer(
+                "Выбери хотя бы одну цель.",
+                reply_markup=goals_keyboard,
+            )
             return
+
         await state.set_state(ProfileForm.microphone)
         await message.answer(
             "Шаг 5 из 7\n🎙 У тебя есть микрофон?",
@@ -344,17 +366,16 @@ async def enter_goals(message: Message, state: FSMContext):
         return
 
     if text not in options:
-        await message.answer("Выбери цель кнопкой ниже.", reply_markup=goals_keyboard)
+        await message.answer(
+            "Выбери цели кнопками ниже, затем нажми «✅ Готово».",
+            reply_markup=goals_keyboard,
+        )
         return
 
     if options[text] not in goals:
         goals.append(options[text])
         await state.update_data(goals=goals)
 
-    await message.answer(
-        "Добавлено! Можешь выбрать ещё или нажать «✅ Готово».",
-        reply_markup=goals_keyboard,
-    )
 
 
 @dp.message(ProfileForm.microphone)
@@ -374,6 +395,7 @@ async def enter_microphone(message: Message, state: FSMContext):
     )
 
 
+
 @dp.message(ProfileForm.behavior)
 async def enter_behavior(message: Message, state: FSMContext):
     text = (message.text or "").strip()
@@ -384,49 +406,84 @@ async def enter_behavior(message: Message, state: FSMContext):
         "✅ Хочу развиваться": "Хочу развиваться",
         "✅ Готов играть регулярно": "Готов играть регулярно",
     }
-    data = await state.get_data()
-    behavior = data.get("behavior", [])
 
     if text == "❌ Отмена":
         await state.clear()
         await message.answer("Заполнение отменено.", reply_markup=keyboard)
         return
 
+    data = await state.get_data()
+    behavior = data.get("behavior", [])
+
     if text == "✅ Готово":
         if not behavior:
-            await message.answer("Выбери хотя бы один пункт.", reply_markup=behavior_keyboard)
+            await message.answer(
+                "Выбери хотя бы один пункт.",
+                reply_markup=behavior_keyboard,
+            )
             return
+
         await state.set_state(ProfileForm.country)
         await message.answer(
-            "Шаг 7 из 7\n🌍 Напиши страну или регион.\n"
-            "Если не хочешь указывать, напиши «Пропустить».",
-            reply_markup=ReplyKeyboardRemove(),
+            "Шаг 7 из 7\n🌍 Выбери страну кнопкой ниже "
+            "или нажми «⏭ Пропустить».",
+            reply_markup=country_keyboard,
         )
         return
 
     if text not in options:
-        await message.answer("Выбери пункт кнопкой ниже.", reply_markup=behavior_keyboard)
+        await message.answer(
+            "Выбирай пункты кнопками, затем нажми «✅ Готово».",
+            reply_markup=behavior_keyboard,
+        )
         return
 
     if options[text] not in behavior:
         behavior.append(options[text])
         await state.update_data(behavior=behavior)
 
-    await message.answer(
-        "Добавлено! Выбери ещё пункты или нажми «✅ Готово».",
-        reply_markup=behavior_keyboard,
-    )
-
 
 @dp.message(ProfileForm.country)
 async def enter_country(message: Message, state: FSMContext):
     country = (message.text or "").strip()
+
+    if country == "❌ Отмена":
+        await state.clear()
+        await message.answer(
+            "Заполнение отменено.",
+            reply_markup=keyboard,
+        )
+        return
+
+    if country == "🌍 Другая страна":
+        await message.answer(
+            "🌍 Напиши название своей страны:",
+            reply_markup=ReplyKeyboardRemove(),
+        )
+        return
+
+    countries = {
+        "🇷🇺 Россия": "Россия",
+        "🇧🇾 Беларусь": "Беларусь",
+        "🇰🇿 Казахстан": "Казахстан",
+        "🇺🇦 Украина": "Украина",
+        "🇱🇻 Латвия": "Латвия",
+    }
+
+    if country == "⏭ Пропустить" or country.lower() == "пропустить":
+        country = ""
+    else:
+        country = countries.get(country, country)
+
     if len(country) > 60:
-        await message.answer("Слишком длинное название. Попробуй короче.")
+        await message.answer(
+            "Слишком длинное название. Попробуй короче.",
+            reply_markup=country_keyboard,
+        )
         return
 
     data = await state.get_data()
-    data["country"] = "" if country.lower() == "пропустить" else country
+    data["country"] = country
     save_player(message.from_user.id, data)
     await state.clear()
 
@@ -435,7 +492,6 @@ async def enter_country(message: Message, state: FSMContext):
         "✅ Анкета сохранена!\n\n" + profile_text(row),
         reply_markup=keyboard,
     )
-
 
 @dp.message(F.text == "👤 Моя анкета")
 async def my_profile(message: Message):
