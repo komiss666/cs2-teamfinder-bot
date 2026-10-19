@@ -48,10 +48,12 @@ keyboard = ReplyKeyboardMarkup(
 
 mode_keyboard = ReplyKeyboardMarkup(
     keyboard=[
-        [KeyboardButton(text="Premier"), KeyboardButton(text="FACEIT")],
+        [KeyboardButton(text="🎯 Premier")],
+        [KeyboardButton(text="🔥 FACEIT")],
         [KeyboardButton(text="❌ Отмена")],
     ],
     resize_keyboard=True,
+    input_field_placeholder="Выбери режим игры",
 )
 
 
@@ -140,27 +142,48 @@ async def enter_nickname(message: Message, state: FSMContext):
     )
 
 
+
 @dp.message(ProfileForm.mode)
 async def enter_mode(message: Message, state: FSMContext):
-    mode = (message.text or "").strip().upper()
+    raw_mode = (message.text or "").strip().lower()
 
-    if mode not in ("PREMIER", "FACEIT"):
+    if raw_mode in (
+        "🎯 premier",
+        "premier",
+        "премьер",
+        "премьер режим",
+        "премьерка",
+    ):
+        mode = "Premier"
+    elif raw_mode in (
+        "🔥 faceit",
+        "faceit",
+        "фейсит",
+        "фейсит режим",
+        "фейс",
+    ):
+        mode = "FACEIT"
+    else:
         await message.answer(
-            "Выбери один из вариантов кнопками: Premier или FACEIT.",
+            "🎮 Выбери режим игры кнопкой ниже:\n\n"
+            "🎯 Premier — рейтинговый режим CS2\n"
+            "🔥 FACEIT — игра на платформе FACEIT",
             reply_markup=mode_keyboard,
         )
         return
 
-    await state.update_data(
-        mode="Premier" if mode == "PREMIER" else "FACEIT"
-    )
+    await state.update_data(mode=mode)
     await state.set_state(ProfileForm.rating)
     await message.answer(
-        "Шаг 3 из 4\n"
+        f"✅ Режим выбран: {mode}\n\n"
+        "Шаг 3 из 4 — рейтинг\n"
         "🏆 Напиши свой рейтинг.\n\n"
-        "Например: 12000 для Premier или 5 для FACEIT.",
+        "Например:\n"
+        "• Premier: 12000\n"
+        "• FACEIT: уровень 5 или 1500 Elo",
         reply_markup=ReplyKeyboardRemove(),
     )
+
 
 
 @dp.message(ProfileForm.rating)
