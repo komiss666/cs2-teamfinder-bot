@@ -2,18 +2,67 @@
 import os
 import asyncio
 import sqlite3
+
 from aiohttp import web
-from aiogram import Bot, Dispatcher
+from aiogram import Bot, Dispatcher, F
 from aiogram.filters import CommandStart, Command
-from aiogram.types import Message, ReplyKeyboardMarkup, KeyboardButton
-from aiogram.webhook.aiohttp_server import SimpleRequestHandler, setup_application
+from aiogram.fsm.state import State, StatesGroup
+from aiogram.fsm.context import FSMContext
+from aiogram.fsm.storage.memory import MemoryStorage
+from aiogram.types import (
+    Message,
+    ReplyKeyboardMarkup,
+    KeyboardButton,
+    ReplyKeyboardRemove,
+)
+from aiogram.webhook.aiohttp_server import (
+    SimpleRequestHandler,
+    setup_application,
+)
 
 TOKEN = os.getenv("BOT_TOKEN")
 WEBHOOK_URL = os.getenv("WEBHOOK_URL")
 PORT = int(os.getenv("PORT", "10000"))
 DB_PATH = os.getenv("DB_PATH", "players.db")
 
-dp = Dispatcher()
+dp = Dispatcher(storage=MemoryStorage())
+
+
+class ProfileForm(StatesGroup):
+    nickname = State()
+    mode = State()
+    rating = State()
+    language = State()
+
+
+keyboard = ReplyKeyboardMarkup(
+    keyboard=[
+        [KeyboardButton(text="🔎 Найти тиммейтов")],
+        [KeyboardButton(text="👤 Моя анкета")],
+        [KeyboardButton(text="📝 Создать анкету")],
+        [KeyboardButton(text="ℹ️ Помощь")],
+    ],
+    resize_keyboard=True,
+)
+
+
+mode_keyboard = ReplyKeyboardMarkup(
+    keyboard=[
+        [KeyboardButton(text="Premier"), KeyboardButton(text="FACEIT")],
+        [KeyboardButton(text="❌ Отмена")],
+    ],
+    resize_keyboard=True,
+)
+
+
+language_keyboard = ReplyKeyboardMarkup(
+    keyboard=[
+        [KeyboardButton(text="Русский"), KeyboardButton(text="English")],
+        [KeyboardButton(text="Другой")],
+        [KeyboardButton(text="❌ Отмена")],
+    ],
+    resize_keyboard=True,
+)
 
 
 def init_db():
@@ -29,145 +78,204 @@ def init_db():
         """)
 
 
-keyboard = ReplyKeyboardMarkup(
-    keyboard=[
-        [KeyboardButton(text="🔎 Найти тиммейтов")],
-        [KeyboardButton(text="👤 Моя анкета")],
-        [KeyboardButton(text="📝 Создать анкету")],
-        [KeyboardButton(text="ℹ️ Помощь")]
-    ],
-    resize_keyboard=True
-)
-
 @dp.message(CommandStart())
-async def start(message: Message):
+async def start(message: Message, state: FSMContext):
+    await state.clear()
     await message.answer(
         "🎮 Привет! Это CS2 TeamFinder!\n\n"
-        "Создай анкету и в будущем сможешь находить тиммейтов.\n"
+        "Создай анкету и подготовься к поиску тиммейтов.\n"
         "Выбирай действие в меню 👇",
-        reply_markup=keyboard
+        reply_markup=keyboard,
+    )
+
+
+@dp.message(Command("cancel"))
+@dp.message(F.text == "❌ Отмена")
+async def cancel(message: Message, state: FSMContext):
+    await state.clear()
+    await message.answer(
+        "❌ Заполнение анкеты отменено.",
+        reply_markup=keyboard,
     )
 
 
 @dp.message(Command("help"))
-@dp.message(lambda m: m.text == "ℹ️ Помощь")
+@dp.message(F.text == "ℹ️ Помощь")
 async def help_command(message: Message):
     await message.answer(
-        "🎮 CS2 TeamFinder — поиск игроков для совместной игры.\n\n"
-        "Создай анкету: ник, режим, рейтинг и язык.\n"
-        "Следующий этап — полноценный поиск тиммейтов."
+        "🎮 CS2 TeamFinder — бот для поиска тиммейтов.\n\n"
+        "📝 Создать анкету — заполнить свои данные.\n"
+        "👤 Моя анкета — посмотреть сохранённую анкету.\n"
+        "🔎 Найти тиммейтов — поиск добавим следующим обновлением.",
+        reply_markup=keyboard,
     )
 
 
-@dp.message(lambda m: m.text == "📝 Создать анкету")
-async def create_profile(message: Message):
+@dp.message(F.text == "📝 Создать анкету")
+async def create_profile(message: Message, state: FSMContext):
+    await state.clear()
+    await state.set_state(ProfileForm.nickname)
     await message.answer(
-        "📝 Создание анкеты\n\n"
-        "Отправь одним сообщением данные в таком формате:\n\n"
-        "Ник: YourNick\n"
-        "Режим: Premier или FACEIT\n"
-        "Рейтинг: например, 12000 или FACEIT 5\n"
-        "Язык: русский\n\n"
-        "Пример:\n"
-        "Ник: Mika\n"
-        "Режим: Premier\n"
-        "Рейтинг: 12000\n"
-        "Язык: русский\n\n"
-        "⚠️ Не указывай пароль Steam или другие секретные данные."
+        "📝 Давай создадим твою анкету!\n\n"
+        "Шаг 1 из 4\n"
+        "🎮 Напиши свой игровой ник:",
+        reply_markup=ReplyKeyboardRemove(),
     )
 
 
-@dp.message(lambda m: m.text == "👤 Моя анкета")
+@dp.message(ProfileForm.nickname)
+async def enter_nickname(message: Message, state: FSMContext):
+    nickname = (message.text or "").strip()
+
+    if not nickname or len(nickname) > 32:
+        await message.answer("Ник должен содержать от 1 до 32 символов. Попробуй ещё раз:")
+        return
+
+    await state.update_data(nickname=nickname)
+    await state.set_state(ProfileForm.mode)
+    await message.answer(
+        "Шаг 2 из 4\n"
+        "🎯 Выбери режим игры:",
+        reply_markup=mode_keyboard,
+    )
+
+
+@dp.message(ProfileForm.mode)
+async def enter_mode(message: Message, state: FSMContext):
+    mode = (message.text or "").strip().upper()
+
+    if mode not in ("PREMIER", "FACEIT"):
+        await message.answer(
+            "Выбери один из вариантов кнопками: Premier или FACEIT.",
+            reply_markup=mode_keyboard,
+        )
+        return
+
+    await state.update_data(
+        mode="Premier" if mode == "PREMIER" else "FACEIT"
+    )
+    await state.set_state(ProfileForm.rating)
+    await message.answer(
+        "Шаг 3 из 4\n"
+        "🏆 Напиши свой рейтинг.\n\n"
+        "Например: 12000 для Premier или 5 для FACEIT.",
+        reply_markup=ReplyKeyboardRemove(),
+    )
+
+
+@dp.message(ProfileForm.rating)
+async def enter_rating(message: Message, state: FSMContext):
+    rating = (message.text or "").strip()
+
+    if not rating or len(rating) > 32:
+        await message.answer("Укажи рейтинг длиной до 32 символов. Попробуй ещё раз:")
+        return
+
+    await state.update_data(rating=rating)
+    await state.set_state(ProfileForm.language)
+    await message.answer(
+        "Шаг 4 из 4\n"
+        "🌍 Выбери язык общения:",
+        reply_markup=language_keyboard,
+    )
+
+
+@dp.message(ProfileForm.language)
+async def enter_language(message: Message, state: FSMContext):
+    language = (message.text or "").strip()
+
+    if language not in ("Русский", "English", "Другой"):
+        await message.answer(
+            "Выбери язык с помощью кнопок ниже.",
+            reply_markup=language_keyboard,
+        )
+        return
+
+    data = await state.get_data()
+
+    with sqlite3.connect(DB_PATH) as db:
+        db.execute(
+            """
+            INSERT INTO players (user_id, nickname, mode, rating, language)
+            VALUES (?, ?, ?, ?, ?)
+            ON CONFLICT(user_id) DO UPDATE SET
+                nickname=excluded.nickname,
+                mode=excluded.mode,
+                rating=excluded.rating,
+                language=excluded.language
+            """,
+            (
+                message.from_user.id,
+                data["nickname"],
+                data["mode"],
+                data["rating"],
+                language,
+            ),
+        )
+
+    await state.clear()
+    await message.answer(
+        "✅ Анкета успешно сохранена!\n\n"
+        f"🎮 Ник: {data['nickname']}\n"
+        f"🎯 Режим: {data['mode']}\n"
+        f"🏆 Рейтинг: {data['rating']}\n"
+        f"🌍 Язык: {language}\n\n"
+        "Посмотреть анкету можно кнопкой «👤 Моя анкета».",
+        reply_markup=keyboard,
+    )
+
+
+@dp.message(F.text == "👤 Моя анкета")
 async def profile(message: Message):
     with sqlite3.connect(DB_PATH) as db:
         row = db.execute(
-            "SELECT nickname, mode, rating, language "
-            "FROM players WHERE user_id = ?",
-            (message.from_user.id,)
+            """
+            SELECT nickname, mode, rating, language
+            FROM players WHERE user_id = ?
+            """,
+            (message.from_user.id,),
         ).fetchone()
 
     if not row:
         await message.answer(
-            "У тебя пока нет анкеты. Нажми «📝 Создать анкету».",
-            reply_markup=keyboard
+            "У тебя пока нет анкеты.\nНажми «📝 Создать анкету».",
+            reply_markup=keyboard,
         )
         return
 
     await message.answer(
-        f"👤 Твоя анкета\n\n"
+        "👤 Твоя анкета\n\n"
         f"🎮 Ник: {row[0]}\n"
-        f"🏆 Режим: {row[1]}\n"
-        f"📊 Рейтинг: {row[2]}\n"
+        f"🎯 Режим: {row[1]}\n"
+        f"🏆 Рейтинг: {row[2]}\n"
         f"🌍 Язык: {row[3]}",
-        reply_markup=keyboard
+        reply_markup=keyboard,
     )
 
 
-@dp.message(lambda m: m.text == "🔎 Найти тиммейтов")
+@dp.message(F.text == "🔎 Найти тиммейтов")
 async def find_players(message: Message):
     await message.answer(
-        "🔎 Поиск игроков добавим следующим обновлением.\n"
-        "Сначала создай свою анкету!"
+        "🔎 Поиск тиммейтов — следующая задача!\n\n"
+        "Сначала создай свою анкету, чтобы быть готовым к поиску.",
+        reply_markup=keyboard,
     )
 
 
 @dp.message()
-async def save_profile(message: Message):
-    if not message.text:
-        await message.answer("Пожалуйста, отправь текст анкеты.")
-        return
-
-    fields = {}
-    for line in message.text.splitlines():
-        if ":" in line:
-            key, value = line.split(":", 1)
-            fields[key.strip().lower()] = value.strip()
-
-    nickname = fields.get("ник")
-    mode = fields.get("режим", "").capitalize()
-    rating = fields.get("рейтинг")
-    language = fields.get("язык")
-
-    if not all([nickname, rating, language]) or mode not in ("Premier", "Faceit"):
-        await message.answer(
-            "Не удалось распознать анкету.\n\n"
-            "Используй формат:\n"
-            "Ник: Mika\n"
-            "Режим: Premier или FACEIT\n"
-            "Рейтинг: 12000\n"
-            "Язык: русский"
-        )
-        return
-
-    if len(nickname) > 32 or len(rating) > 32 or len(language) > 32:
-        await message.answer("Слишком длинное поле. Сократи данные и попробуй снова.")
-        return
-
-    with sqlite3.connect(DB_PATH) as db:
-        db.execute(
-            "INSERT INTO players (user_id, nickname, mode, rating, language) "
-            "VALUES (?, ?, ?, ?, ?) "
-            "ON CONFLICT(user_id) DO UPDATE SET "
-            "nickname=excluded.nickname, mode=excluded.mode, "
-            "rating=excluded.rating, language=excluded.language",
-            (message.from_user.id, nickname, mode, rating, language)
-        )
-
+async def other_messages(message: Message):
     await message.answer(
-        "✅ Анкета сохранена!\n\n"
-        f"🎮 Ник: {nickname}\n"
-        f"🏆 Режим: {mode}\n"
-        f"📊 Рейтинг: {rating}\n"
-        f"🌍 Язык: {language}\n\n"
-        "Открой «👤 Моя анкета», чтобы проверить её.",
-        reply_markup=keyboard
+        "Выбери действие с помощью кнопок меню 👇",
+        reply_markup=keyboard,
     )
 
 
 async def on_startup(app):
     if not TOKEN or not WEBHOOK_URL:
         raise RuntimeError("Не заданы BOT_TOKEN или WEBHOOK_URL.")
-    await app["bot"].set_webhook(f"{WEBHOOK_URL.rstrip('/')}/webhook")
+    await app["bot"].set_webhook(
+        f"{WEBHOOK_URL.rstrip('/')}/webhook"
+    )
 
 
 async def on_shutdown(app):
@@ -183,15 +291,22 @@ async def main():
     app = web.Application()
     app["bot"] = bot
 
-    SimpleRequestHandler(dispatcher=dp, bot=bot).register(app, path="/webhook")
+    SimpleRequestHandler(
+        dispatcher=dp,
+        bot=bot,
+    ).register(app, path="/webhook")
+
     setup_application(app, dp, bot=bot)
     app.on_startup.append(on_startup)
     app.on_cleanup.append(on_shutdown)
-    app.router.add_get("/", lambda request: web.Response(text="CS2 TeamFinder is running"))
+    app.router.add_get(
+        "/",
+        lambda request: web.Response(text="CS2 TeamFinder is running"),
+    )
 
     runner = web.AppRunner(app)
     await runner.setup()
-    site = web.TCPSite(runner, "0.0.0.0", PORT)
+    site = web.TCPSite(app=runner, host="0.0.0.0", port=PORT)
     await site.start()
 
     try:
