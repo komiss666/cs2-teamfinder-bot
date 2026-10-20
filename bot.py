@@ -197,7 +197,7 @@ def get_player(user_id):
     with connect_db() as db:
         return db.execute(
             """SELECT nickname, mode, premier_rating, faceit_elo,
-                      goals, microphone, behavior, country
+                      goals, microphone, behavior, country, username
                FROM players WHERE user_id = ?""",
             (user_id,),
         ).fetchone()
