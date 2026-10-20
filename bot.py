@@ -238,7 +238,7 @@ def save_player(user_id, data, username=None):
 
 
 def profile_text(row):
-    nickname, mode, premier, faceit, goals, mic, behavior, country = row
+    nickname, mode, premier, faceit, goals, mic, behavior, country, username = row
     lines = [
         "👤 Твоя анкета",
         "",
