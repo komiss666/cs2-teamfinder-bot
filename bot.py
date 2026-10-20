@@ -184,9 +184,13 @@ def init_db():
                 goals TEXT NOT NULL,
                 microphone TEXT NOT NULL,
                 behavior TEXT NOT NULL,
-                country TEXT NOT NULL
+                country TEXT NOT NULL,
+                username TEXT
             )
         """)
+        columns = [row[1] for row in db.execute("PRAGMA table_info(players)").fetchall()]
+        if "username" not in columns:
+            db.execute("ALTER TABLE players ADD COLUMN username TEXT")
 
 
 def get_player(user_id):
@@ -199,13 +203,14 @@ def get_player(user_id):
         ).fetchone()
 
 
-def save_player(user_id, data):
+
+def save_player(user_id, data, username=None):
     with connect_db() as db:
         db.execute(
             """INSERT INTO players
                (user_id, nickname, mode, premier_rating, faceit_elo,
-                goals, microphone, behavior, country)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                goals, microphone, behavior, country, username)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                ON CONFLICT(user_id) DO UPDATE SET
                 nickname=excluded.nickname,
                 mode=excluded.mode,
@@ -214,7 +219,8 @@ def save_player(user_id, data):
                 goals=excluded.goals,
                 microphone=excluded.microphone,
                 behavior=excluded.behavior,
-                country=excluded.country""",
+                country=excluded.country,
+                username=excluded.username""",
             (
                 user_id,
                 data["nickname"],
@@ -225,8 +231,10 @@ def save_player(user_id, data):
                 data["microphone"],
                 ", ".join(data["behavior"]),
                 data["country"],
+                username,
             ),
         )
+
 
 
 def profile_text(row):
@@ -557,7 +565,11 @@ async def enter_country(message: Message, state: FSMContext):
 
     data = await state.get_data()
     data["country"] = country
-    save_player(message.from_user.id, data)
+    save_player(
+    message.from_user.id,
+    data,
+    username=message.from_user.username,
+)
     await state.clear()
 
     row = get_player(message.from_user.id)
@@ -594,10 +606,10 @@ async def find_players(message: Message):
     with connect_db() as db:
         rows = db.execute(
             """SELECT user_id, nickname, mode, premier_rating, faceit_elo,
-                      goals, microphone, behavior, country
-               FROM players
-               WHERE user_id != ?
-               ORDER BY nickname""",
+          goals, microphone, behavior, country, username
+ FROM players
+ WHERE user_id != ?
+ ORDER BY nickname""",
             (message.from_user.id,),
         ).fetchall()
 
