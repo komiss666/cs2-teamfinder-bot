@@ -597,7 +597,7 @@ async def find_players(message: Message):
                       goals, microphone, behavior, country
                FROM players
                WHERE user_id != ?
-               ORDER BY nickname LIMIT 10""",
+               ORDER BY nickname""",
             (message.from_user.id,),
         ).fetchall()
 
