@@ -11,9 +11,12 @@ from aiogram.fsm.context import FSMContext
 from aiogram.fsm.storage.memory import MemoryStorage
 from aiogram.types import (
     Message,
+    CallbackQuery,
     ReplyKeyboardMarkup,
     KeyboardButton,
     ReplyKeyboardRemove,
+    InlineKeyboardMarkup,
+    InlineKeyboardButton,
 )
 from aiogram.webhook.aiohttp_server import (
     SimpleRequestHandler,
@@ -81,6 +84,33 @@ goals_keyboard = ReplyKeyboardMarkup(
     input_field_placeholder="Выбери цели и нажми «Готово»",
 )
 
+def goals_inline_keyboard(selected=None):
+    selected = selected or []
+    options = [
+        ("Поднять рейтинг", "goal_rating"),
+        ("Постоянные тиммейты", "goal_teammates"),
+        ("Играть ради удовольствия", "goal_fun"),
+        ("Команда для турниров", "goal_tournament"),
+    ]
+
+    buttons = []
+    for title, callback in options:
+        mark = "☑️" if title in selected else "⬜"
+        buttons.append([
+            InlineKeyboardButton(
+                text=f"{mark} {title}",
+                callback_data=callback,
+            )
+        ])
+
+    buttons.append([
+        InlineKeyboardButton(text="✅ Готово", callback_data="goals_done")
+    ])
+    buttons.append([
+        InlineKeyboardButton(text="❌ Отмена", callback_data="selection_cancel")
+    ])
+
+    return InlineKeyboardMarkup(inline_keyboard=buttons)
 
 behavior_keyboard = ReplyKeyboardMarkup(
     keyboard=[
@@ -94,6 +124,35 @@ behavior_keyboard = ReplyKeyboardMarkup(
     ],
     resize_keyboard=True,
 )
+def behavior_inline_keyboard(selected=None):
+    selected = selected or []
+    options = [
+        ("Не токсичу", "behavior_non_toxic"),
+        ("Играю командно", "behavior_teamplay"),
+        ("Не бросаю матчи", "behavior_no_abandon"),
+        ("Хочу развиваться", "behavior_improve"),
+        ("Готов играть регулярно", "behavior_regular"),
+    ]
+
+    buttons = []
+    for title, callback in options:
+        mark = "☑️" if title in selected else "⬜"
+        buttons.append([
+            InlineKeyboardButton(
+                text=f"{mark} {title}",
+                callback_data=callback,
+            )
+        ])
+
+    buttons.append([
+        InlineKeyboardButton(text="✅ Готово", callback_data="behavior_done")
+    ])
+    buttons.append([
+        InlineKeyboardButton(text="❌ Отмена", callback_data="selection_cancel")
+    ])
+
+    return InlineKeyboardMarkup(inline_keyboard=buttons)
+
 country_keyboard = ReplyKeyboardMarkup(
     keyboard=[
         [KeyboardButton(text="🇷🇺 Россия")],
@@ -292,7 +351,7 @@ async def ask_goals(message: Message, state: FSMContext):
         "Шаг 4 из 7\n"
         "Выбирай цели по очереди — можно несколько.\n"
         "Когда закончишь, нажми «✅ Готово».",
-        reply_markup=goals_keyboard,
+        reply_markup=goals_inline_keyboard(),
     )
 
 
@@ -332,50 +391,55 @@ async def enter_faceit(message: Message, state: FSMContext):
 
 
 
-@dp.message(ProfileForm.goals)
-async def enter_goals(message: Message, state: FSMContext):
-    text = (message.text or "").strip()
+@dp.callback_query(ProfileForm.goals)
+async def enter_goals(callback: CallbackQuery, state: FSMContext):
     options = {
-        "📈 Поднять рейтинг": "Поднять рейтинг",
-        "🤝 Постоянные тиммейты": "Постоянные тиммейты",
-        "🎉 Играть ради удовольствия": "Играть ради удовольствия",
-        "🏆 Собрать команду для турниров": "Команда для турниров",
+        "goal_rating": "Поднять рейтинг",
+        "goal_teammates": "Постоянные тиммейты",
+        "goal_fun": "Играть ради удовольствия",
+        "goal_tournament": "Команда для турниров",
     }
-
-    if text == "❌ Отмена":
-        await state.clear()
-        await message.answer("Заполнение отменено.", reply_markup=keyboard)
-        return
 
     data = await state.get_data()
     goals = data.get("goals", [])
 
-    if text == "✅ Готово":
+    if callback.data in options:
+        title = options[callback.data]
+
+        if title in goals:
+            goals.remove(title)
+        else:
+            goals.append(title)
+
+        await state.update_data(goals=goals)
+        await callback.message.edit_reply_markup(
+            reply_markup=goals_inline_keyboard(goals)
+        )
+        await callback.answer()
+        return
+
+    if callback.data == "goals_done":
         if not goals:
-            await message.answer(
-                "Выбери хотя бы одну цель.",
-                reply_markup=goals_keyboard,
-            )
+            await callback.answer("Выбери хотя бы одну цель.", show_alert=True)
             return
 
+        await callback.answer()
         await state.set_state(ProfileForm.microphone)
-        await message.answer(
+        await callback.message.edit_reply_markup(reply_markup=None)
+        await callback.message.answer(
             "Шаг 5 из 7\n🎙 У тебя есть микрофон?",
             reply_markup=yes_no_keyboard,
         )
         return
 
-    if text not in options:
-        await message.answer(
-            "Выбери цели кнопками ниже, затем нажми «✅ Готово».",
-            reply_markup=goals_keyboard,
+    if callback.data == "selection_cancel":
+        await callback.answer()
+        await state.clear()
+        await callback.message.edit_reply_markup(reply_markup=None)
+        await callback.message.answer(
+            "Заполнение отменено.",
+            reply_markup=keyboard,
         )
-        return
-
-    if options[text] not in goals:
-        goals.append(options[text])
-        await state.update_data(goals=goals)
-
 
 
 @dp.message(ProfileForm.microphone)
@@ -391,56 +455,65 @@ async def enter_microphone(message: Message, state: FSMContext):
         "Шаг 6 из 7\n"
         "Отметь подходящие пункты. Это твои обещания другим игрокам.\n"
         "Нажми «✅ Готово», когда закончишь.",
-        reply_markup=behavior_keyboard,
+        reply_markup=behavior_inline_keyboard(),
     )
 
 
 
-@dp.message(ProfileForm.behavior)
-async def enter_behavior(message: Message, state: FSMContext):
-    text = (message.text or "").strip()
+@dp.callback_query(ProfileForm.behavior)
+async def enter_behavior(callback: CallbackQuery, state: FSMContext):
     options = {
-        "✅ Не токсичу": "Не токсичу",
-        "✅ Играю командно": "Играю командно",
-        "✅ Не бросаю матчи": "Не бросаю матчи",
-        "✅ Хочу развиваться": "Хочу развиваться",
-        "✅ Готов играть регулярно": "Готов играть регулярно",
+        "behavior_non_toxic": "Не токсичу",
+        "behavior_teamplay": "Играю командно",
+        "behavior_no_abandon": "Не бросаю матчи",
+        "behavior_improve": "Хочу развиваться",
+        "behavior_regular": "Готов играть регулярно",
     }
-
-    if text == "❌ Отмена":
-        await state.clear()
-        await message.answer("Заполнение отменено.", reply_markup=keyboard)
-        return
 
     data = await state.get_data()
     behavior = data.get("behavior", [])
 
-    if text == "✅ Готово":
+    if callback.data in options:
+        title = options[callback.data]
+
+        if title in behavior:
+            behavior.remove(title)
+        else:
+            behavior.append(title)
+
+        await state.update_data(behavior=behavior)
+        await callback.message.edit_reply_markup(
+            reply_markup=behavior_inline_keyboard(behavior)
+        )
+        await callback.answer()
+        return
+
+    if callback.data == "behavior_done":
         if not behavior:
-            await message.answer(
+            await callback.answer(
                 "Выбери хотя бы один пункт.",
-                reply_markup=behavior_keyboard,
+                show_alert=True,
             )
             return
 
+        await callback.answer()
         await state.set_state(ProfileForm.country)
-        await message.answer(
+        await callback.message.edit_reply_markup(reply_markup=None)
+        await callback.message.answer(
             "Шаг 7 из 7\n🌍 Выбери страну кнопкой ниже "
             "или нажми «⏭ Пропустить».",
             reply_markup=country_keyboard,
         )
         return
 
-    if text not in options:
-        await message.answer(
-            "Выбирай пункты кнопками, затем нажми «✅ Готово».",
-            reply_markup=behavior_keyboard,
+    if callback.data == "selection_cancel":
+        await callback.answer()
+        await state.clear()
+        await callback.message.edit_reply_markup(reply_markup=None)
+        await callback.message.answer(
+            "Заполнение отменено.",
+            reply_markup=keyboard,
         )
-        return
-
-    if options[text] not in behavior:
-        behavior.append(options[text])
-        await state.update_data(behavior=behavior)
 
 
 @dp.message(ProfileForm.country)
