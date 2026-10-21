@@ -567,11 +567,11 @@ async def enter_country(message: Message, state: FSMContext):
 
     data = await state.get_data()
     data["country"] = country
-    save_player(
-    message.from_user.id,
-    data,
-    username=message.from_user.username,
-)
+        save_player(
+        message.from_user.id,
+        data,
+        username=message.from_user.username,
+    )
     await state.clear()
 
     row = get_player(message.from_user.id)
