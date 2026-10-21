@@ -615,8 +615,7 @@ async def find_players(message: Message):
 
     matches = []
     for row in rows:
-        uid, nick, other_mode, other_premier, other_faceit, other_goals, other_mic, other_behavior, other_country = row
-
+        uid, nick, other_mode, other_premier, other_faceit, other_goals, other_mic, other_behavior, other_country, username = row
         common_mode = any(
             part in other_mode for part in mode.split(" + ")
         ) or mode in other_mode
@@ -634,6 +633,9 @@ async def find_players(message: Message):
                 if abs(faceit - other_faceit) > 300:
                     continue
 
+       
+        contact = f"@{username}" if username else "username не указан"
+
         matches.append(
             f"🎮 {nick}\n"
             f"🎯 Режим: {other_mode}\n"
@@ -642,8 +644,10 @@ async def find_players(message: Message):
             f"🎙 Микрофон: {other_mic}\n"
             f"🎯 Цели: {other_goals}\n"
             f"🤝 Стиль игры: {other_behavior}\n"
-            f"🌍 Регион: {other_country or 'Не указан'}"
+            f"🌍 Регион: {other_country or 'Не указан'}\n"
+            f"✉️ Telegram: {contact}"
         )
+
 
     if not matches:
         await message.answer(
