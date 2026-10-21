@@ -526,6 +526,7 @@ async def enter_behavior(callback: CallbackQuery, state: FSMContext):
         )
 
 
+
 @dp.message(ProfileForm.country)
 async def enter_country(message: Message, state: FSMContext):
     country = (message.text or "").strip()
@@ -567,11 +568,13 @@ async def enter_country(message: Message, state: FSMContext):
 
     data = await state.get_data()
     data["country"] = country
-        save_player(
+
+    save_player(
         message.from_user.id,
         data,
         username=message.from_user.username,
     )
+
     await state.clear()
 
     row = get_player(message.from_user.id)
@@ -579,6 +582,7 @@ async def enter_country(message: Message, state: FSMContext):
         "✅ Анкета сохранена!\n\n" + profile_text(row),
         reply_markup=keyboard,
     )
+
 
 @dp.message(F.text == "👤 Моя анкета")
 async def my_profile(message: Message):
