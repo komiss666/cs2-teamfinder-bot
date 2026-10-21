@@ -193,14 +193,16 @@ def init_db():
             db.execute("ALTER TABLE players ADD COLUMN username TEXT")
 
 
+
 def get_player(user_id):
     with connect_db() as db:
         return db.execute(
             """SELECT nickname, mode, premier_rating, faceit_elo,
-                      goals, microphone, behavior, country, username
+                      goals, microphone, behavior, country
                FROM players WHERE user_id = ?""",
             (user_id,),
         ).fetchone()
+
 
 
 
